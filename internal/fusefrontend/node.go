@@ -3,6 +3,7 @@ package fusefrontend
 import (
 	"context"
 	"syscall"
+  "runtime/debug"
 
 	"golang.org/x/sys/unix"
 
@@ -69,6 +70,7 @@ func (n *Node) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (ch 
 //
 // GetAttr is symlink-safe through use of openBackingDir() and Fstatat().
 func (n *Node) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) (errno syscall.Errno) {
+  debug.PrintStack()
 	// If the kernel gives us a file handle, use it.
 	if f != nil {
 		return f.(fs.FileGetattrer).Getattr(ctx, out)

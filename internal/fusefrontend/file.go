@@ -426,6 +426,7 @@ func (f *File) Fsync(ctx context.Context, flags uint32) (errno syscall.Errno) {
 
 // Getattr FUSE call (like stat)
 func (f *File) Getattr(ctx context.Context, a *fuse.AttrOut) syscall.Errno {
+  tlog.Debug.Println("File getattr")
 	f.fdLock.RLock()
 	defer f.fdLock.RUnlock()
 

@@ -491,6 +491,11 @@ func initGoFuse(rootNode fs.InodeEmbedder, args *argContainer) *fuse.Server {
 		}
 	}
 
+  tlog.Debug.Println("---- rootNode ---")
+  tlog.Debug.Println(rootNode)
+  tlog.Debug.Println("---- fuseOpts ---")
+  tlog.Debug.Println(fuseOpts)
+  tlog.Debug.Println("---- end---")
 	srv, err := fs.Mount(args.mountpoint, rootNode, fuseOpts)
 	if err != nil {
 		tlog.Fatal.Printf("fs.Mount failed: %s", strings.TrimSpace(err.Error()))
