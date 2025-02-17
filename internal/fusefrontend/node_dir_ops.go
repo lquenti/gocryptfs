@@ -12,6 +12,7 @@ import (
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 
+	"github.com/rfjakob/gocryptfs/v2/internal/audit_log"
 	"github.com/rfjakob/gocryptfs/v2/internal/configfile"
 	"github.com/rfjakob/gocryptfs/v2/internal/cryptocore"
 	"github.com/rfjakob/gocryptfs/v2/internal/nametransform"
@@ -82,6 +83,8 @@ func (n *Node) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.En
 	if rn.args.PreserveOwner {
 		context = toFuseCtx(ctx)
 	}
+
+  audit_log.WriteAuditEvent(audit_log.EventMkdir, nil)
 
 	var st syscall.Stat_t
 	if rn.args.PlaintextNames {
@@ -253,6 +256,7 @@ func (n *Node) Rmdir(ctx context.Context, name string) (code syscall.Errno) {
 	if errno != 0 {
 		return errno
 	}
+  audit_log.WriteAuditEvent(audit_log.EventRmdir, nil)
 	defer syscall.Close(parentDirFd)
 	if rn.args.PlaintextNames {
 		// Unlinkat with AT_REMOVEDIR is equivalent to Rmdir

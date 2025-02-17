@@ -7,6 +7,7 @@ import (
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 
+	"github.com/rfjakob/gocryptfs/v2/internal/audit_log"
 	"github.com/rfjakob/gocryptfs/v2/internal/nametransform"
 	"github.com/rfjakob/gocryptfs/v2/internal/syscallcompat"
 	"github.com/rfjakob/gocryptfs/v2/internal/tlog"
@@ -21,7 +22,6 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 		return
 	}
 	defer syscall.Close(dirfd)
-
 	rn := n.rootNode()
 	newFlags := rn.mangleOpenFlags(flags)
 	// Taking this lock makes sure we don't race openWriteOnlyFile()
@@ -33,7 +33,10 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 	}
 
 	// Open backing file
+  audit_log.WriteAuditEvent(audit_log.EventOpen, nil)
 	fd, err := syscallcompat.Openat(dirfd, cName, newFlags, 0)
+
+
 	// Handle a few specific errors
 	if err != nil {
 		if err == syscall.EMFILE {
@@ -50,7 +53,21 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 		errno = fs.ToErrno(err)
 		return
 	}
-	fh, _, errno = NewFile(fd, cName, rn)
+  var file *File
+	file, _, errno = NewFile(fd, cName, rn)
+  fh = file
+
+  // very useful info for finishing this, but obv segfaults on root
+  // tlog.Debug.Println("before (Open)")
+  // filename, p := n.Parent()
+  // filenamep, pp := p.Parent()
+  // filenamepp, _ := pp.Parent()
+  // tlog.Debug.Println(filename)
+  // tlog.Debug.Println(filenamep)
+  // tlog.Debug.Println(filenamepp)
+  // tlog.Debug.Printf("file fd %v", file.intFd())
+  // tlog.Debug.Printf("node nodeId %v", n.StableAttr().Ino)
+  // tlog.Debug.Println("afrer (Open)")
 	return fh, fuseFlags, errno
 }
 
@@ -74,6 +91,7 @@ func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint3
 	newFlags := rn.mangleOpenFlags(flags)
 	// Handle long file name
 	ctx2 := toFuseCtx(ctx)
+  audit_log.WriteAuditEvent(audit_log.EventCreate, nil)
 	if !rn.args.PlaintextNames && nametransform.IsLongContent(cName) {
 		// Create ".name"
 		err = rn.nameTransform.WriteLongNameAt(dirfd, cName, name)

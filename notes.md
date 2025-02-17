@@ -52,12 +52,109 @@ Relevant params
 }
 ```
 
+## Code structure
+- [ ] `main`
+  - [x] `cli_args`, `help`, `version`
+    - CLI interaction
+  - [x] `daemonize`
+    - `forkChild` gets called iff not `-fg` and do mount.
+      - Go doesnt have real fork, this lets the parent wait for the child to die
+    - Also handles syslog output
+  - [x] `fsck`
+    - Only gets called from main when `-fsck`, terminates afterwards
+    - "Check CIPHERDIR for consistency. If corruption is found, the exit code is 26."
+  - [x] `info`
+    - `-info`: Pretty prints config without secrets
+  - [ ] `init_dir`
+    - `gocryptfs -init` (for both fwd and bwd mode)
+  - [ ] `main`
+  - [x] `masterkey`
+    - gets masterkey from args (which is hexified when given to user)
+    - if via stdin, read password
+    - if via param, just unhex it
+    - if "zero-key" => all zeros (testing only)
+  - [ ] `mount`
+  - [x] `profiling`: Perf stuff
+    - `-cpuprofile`: `pprof.StartCPUProfile`
+    - `-memprofile`: `pprof.WriteHeapProfile`
+    - `-trace`: `runtime/trace`
+
+- ctlsock
+  - Library for gocryptfs control socket interface
+  - `-ctlsock /tmp/my.sock`
+  - Used by `gocryptfs-xray`
+- gocryptfs-xray
+  - do encryption/decryption without the mounty stuff using the sockets
+  - See man page
+
+- [x] `internal::configfile`: load config file + key wrapping
+  - Manages **master key storage**
+  - Contains scrypt
+  - how key wrapping works
+    - random base master key is generated
+    - another key is derived user password (using scrypt)
+      - This is the key encryption key (KEK)
+      - scrypt "allgedly increases entropy?" but more important slows down brute force
+    - master key is encrypted/wrapped using derived key
+      - Using AES-256-GCM, see `getKeyEncrypter`
+    - encrypted master key is stored in cfg file
+- [ ] `internal::contentenc`
+- [ ] `internal::cryptocore`
+- [ ] `internal::ctlsocksrv`
+- [ ] `internal::ensurefds012`
+- [x] `internal::exitcodes`: what name implies
+- [x] `internal::fido2`: Impls fido2 support by wrapping `fido2-assert` and `fido2-cred`
+  - can be spefidied using `--fido2` when `--init`
+- [ ] `internal::fusefrontend`
+- [x] `internal::fusefrontend_reverse`
+  - we dont care about reverse mode, just implements same method heads as normal
+- [ ] `internal::inomap`
+- [ ] `internal::nametransform`
+- [ ] `internal::openfiletable`
+- [ ] `internal::pathiv`
+- [ ] `internal::readpassword`
+- [ ] `internal::siv_aead`
+- [x] `internal::speed`: Run crypto speed test via `-speed`
+  - Just one public runction that gets called only from main
+- [ ] `internal::stupidgcm`
+- [ ] `internal::syscallcompat`
+- [x] `internal::tlog`: Basic logging library that can be toggled
+
+### Folders to be ignored
+- .git
+- .github
+- contrib
+  - Just used for tests
+- Documentation
+- profiling
+- tests
+
+
+
 ## FUSE funcs
 ```
 ~/code/gocryptfs$ rg -i "FUSE call" internal/fusefrontend
 internal/fusefrontend/node_open_create.go
 15:// Open - FUSE call. Open already-existing file.
 57:// Create - FUSE call. Creates a new file.
+
+internal/fusefrontend/node_dir_ops.go
+70:// Mkdir - FUSE call. Create a directory at "newPath" with permissions "mode".
+162:// Readdir - FUSE call.
+247:// Rmdir - FUSE call.
+379:// Opendir is a FUSE call to check if the directory can be opened.
+
+internal/fusefrontend/node.go
+23:// Lookup - FUSE call for discovering a file.
+68:// GetAttr - FUSE call for stat()ing a file.
+113:// Unlink - FUSE call. Delete a file.
+138:// Readlink - FUSE call.
+151:// Setattr - FUSE call. Called for chmod, truncate, utimens, ...
+233:// StatFs - FUSE call. Returns information about the filesystem.
+247:// Mknod - FUSE call. Create a device file.
+301:// Link - FUSE call. Creates a hard link at "newPath" pointing to file
+352:// Symlink - FUSE call. Create a symlink.
+419:// Rename - FUSE call.
 
 internal/fusefrontend/node_xattr.go
 33:// GetXAttr - FUSE call. Reads the value of extended attribute "attr".
@@ -77,24 +174,6 @@ internal/fusefrontend/file_holes.go
 
 internal/fusefrontend/file_allocate_truncate.go
 27:// Allocate - FUSE call for fallocate(2)
-
-internal/fusefrontend/node_dir_ops.go
-70:// Mkdir - FUSE call. Create a directory at "newPath" with permissions "mode".
-162:// Readdir - FUSE call.
-247:// Rmdir - FUSE call.
-379:// Opendir is a FUSE call to check if the directory can be opened.
-
-internal/fusefrontend/node.go
-23:// Lookup - FUSE call for discovering a file.
-68:// GetAttr - FUSE call for stat()ing a file.
-113:// Unlink - FUSE call. Delete a file.
-138:// Readlink - FUSE call.
-151:// Setattr - FUSE call. Called for chmod, truncate, utimens, ...
-233:// StatFs - FUSE call. Returns information about the filesystem.
-247:// Mknod - FUSE call. Create a device file.
-301:// Link - FUSE call. Creates a hard link at "newPath" pointing to file
-352:// Symlink - FUSE call. Create a symlink.
-419:// Rename - FUSE call.
 ```
 
 ## Stacktrace of Read FUSE call
@@ -151,8 +230,7 @@ srv, err := fs.Mount(args.mountpoint, rootNode, fuseOpts)
 - initGoFuse actually creates `fs` as a `RootNode` (`./internal/fusefrontend/root_node.go`)
 - `RootNode` extends `Node`, which newtypes `fs.Inode`
   - This implements some FUSE calls (`Lookup`, `GetAttr`, `Unlink`, `Readlink`...)
-- TODO how `RootNode` is mapped to `File`, for which the FUSE methods are impled
-  - <https://github.com/rfjakob/gocryptfs/discussions/896>
+- And in `Create`/`Open` (`node_open_create.go`) it calls `NewFile`, which returns a File
 
 
 ## FUSE Op Trail
@@ -171,3 +249,60 @@ srv, err := fs.Mount(args.mountpoint, rootNode, fuseOpts)
   - `WRITE`
   - `FLUSH`
   - `RELEASE`
+
+## All FUSE Methods implemented
+### Node
+- Access (undocumented, never called by gocryptfs)
+- Create
+- Fsync
+- Getattr
+- GetXAttr
+- Link
+- ListXAttr
+- Lookup
+- Mkdir
+- Mknod
+- Open
+- Opendir (if the directory can be opened)
+- Readdir
+- Readlink
+- RemoveXAttr
+- Rename
+- Rmdir
+- Setattr
+- SetXAttr
+- StatFs
+- Symlink
+- Unlink
+### File
+- Allocate
+- Flush
+- Getattr
+- Lseek
+- Read
+- Release
+- Write
+- Setattr (undocumented)
+
+## What to track for basic Audit trail
+- Open file
+  - Open
+  - Create
+- Close file
+  - Release
+- Read file
+  - Read
+  - Readlink
+- Write file
+  - Write
+  - Rename
+  - Unlink
+- Other to not be confused
+  - Lseek
+  - Allocate (for fallocate)
+  - Mkdir
+  - Rmdir
+  - MkNod (create a device file?!? lets hope nobody ever uses this...)
+  - Link (hardlink?!?)
+  - Symlink
+

@@ -17,6 +17,7 @@ import (
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 
+	"github.com/rfjakob/gocryptfs/v2/internal/audit_log"
 	"github.com/rfjakob/gocryptfs/v2/internal/contentenc"
 	"github.com/rfjakob/gocryptfs/v2/internal/inomap"
 	"github.com/rfjakob/gocryptfs/v2/internal/openfiletable"
@@ -231,6 +232,10 @@ func (f *File) doRead(dst []byte, off uint64, length uint64) ([]byte, syscall.Er
 
 // Read - FUSE call
 func (f *File) Read(ctx context.Context, buf []byte, off int64) (resultData fuse.ReadResult, errno syscall.Errno) {
+  tlog.Debug.Println("before (Read)")
+  tlog.Debug.Printf("file fd %v", f.intFd())
+  tlog.Debug.Println("after (Read)")
+
 	if len(buf) > fuse.MAX_KERNEL_WRITE {
 		// This would crash us due to our fixed-size buffer pool
 		tlog.Warn.Printf("Read: rejecting oversized request with EMSGSIZE, len=%d", len(buf))
@@ -243,6 +248,7 @@ func (f *File) Read(ctx context.Context, buf []byte, off int64) (resultData fuse
 	defer f.fileTableEntry.ContentLock.RUnlock()
 
 	tlog.Debug.Printf("ino%d: FUSE Read: offset=%d length=%d", f.qIno.Ino, off, len(buf))
+  audit_log.WriteAuditEvent(audit_log.EventRead, nil)
 	out, errno := f.doRead(buf[:0], uint64(off), uint64(len(buf)))
 	if errno != 0 {
 		return nil, errno
@@ -383,6 +389,7 @@ func (f *File) Write(ctx context.Context, data []byte, off int64) (uint32, sysca
 			return 0, errno
 		}
 	}
+  audit_log.WriteAuditEvent(audit_log.EventWrite, nil)
 	n, errno := f.doWrite(data, off)
 	if errno == 0 {
 		f.lastOpCount = openfiletable.WriteOpCount()
@@ -399,6 +406,7 @@ func (f *File) Release(ctx context.Context) syscall.Errno {
 	}
 	f.released = true
 	openfiletable.Unregister(f.qIno)
+  audit_log.WriteAuditEvent(audit_log.EventRelease, nil)
 	err := f.fd.Close()
 	f.fdLock.Unlock()
 	return fs.ToErrno(err)
