@@ -129,8 +129,6 @@ Relevant params
 - profiling
 - tests
 
-
-
 ## FUSE funcs
 ```
 ~/code/gocryptfs$ rg -i "FUSE call" internal/fusefrontend
@@ -233,7 +231,7 @@ srv, err := fs.Mount(args.mountpoint, rootNode, fuseOpts)
 - And in `Create`/`Open` (`node_open_create.go`) it calls `NewFile`, which returns a File
 
 
-## FUSE Op Trail
+## FUSE Op Trail (Order)
 - For Read OP
   - (Node) `GETATTTR`
   - `LOOKUP`
@@ -306,3 +304,38 @@ srv, err := fs.Mount(args.mountpoint, rootNode, fuseOpts)
   - Link (hardlink?!?)
   - Symlink
 
+## Tricks in codebase
+
+### Get filepath from Node `n`
+```go
+filename, parent_node := n.Parent()
+if parent_node != nil {
+ folder_name, parent_parent_node := parent_node.Parent()
+ // call recursively until nil to reconstruct full path within mount
+}
+```
+
+### Get identifiers for Node and File
+(Currently not happy with it, but hte best I've got so far)
+```go
+f.intFd()
+n.StableAttr().Ino
+```
+
+### Get caller pid, process name, uid, gid
+Let `ctx` be a `context.Context`
+```go
+ctx2 := toFuseCtx(ctx)
+pid := ctx2.Pid
+uid := ctx2.Uid
+gid := ctx2.Gid
+buf := make([]byte, syscallcompat.PATH_MAX)
+pid_path := fmt.Sprintf("/proc/%d/exe", pid)
+num, err := syscall.Readlink(pid_path, buf)
+if (err != nil) {
+  tlog.Warn.Printf("read process name failed w/ '%s'", err)
+} else {
+  caller_str := string(buf[:num])
+  tlog.Debug.Printf("pid %d uid %d gid %d process_name '%s'", pid, uid, gid, caller_str)
+}
+```

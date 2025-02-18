@@ -56,18 +56,6 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
   var file *File
 	file, _, errno = NewFile(fd, cName, rn)
   fh = file
-
-  // very useful info for finishing this, but obv segfaults on root
-  // tlog.Debug.Println("before (Open)")
-  // filename, p := n.Parent()
-  // filenamep, pp := p.Parent()
-  // filenamepp, _ := pp.Parent()
-  // tlog.Debug.Println(filename)
-  // tlog.Debug.Println(filenamep)
-  // tlog.Debug.Println(filenamepp)
-  // tlog.Debug.Printf("file fd %v", file.intFd())
-  // tlog.Debug.Printf("node nodeId %v", n.StableAttr().Ino)
-  // tlog.Debug.Println("afrer (Open)")
 	return fh, fuseFlags, errno
 }
 
