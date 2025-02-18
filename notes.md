@@ -308,11 +308,19 @@ srv, err := fs.Mount(args.mountpoint, rootNode, fuseOpts)
 
 ### Get filepath from Node `n`
 ```go
-filename, parent_node := n.Parent()
-if parent_node != nil {
- folder_name, parent_parent_node := parent_node.Parent()
- // call recursively until nil to reconstruct full path within mount
+var parts []string
+var curr *fs.Inode
+curr = &n.Inode
+// traverse up
+for curr != nil {
+  name, parent := curr.Parent()
+  parts = append(parts, name)
+  curr = parent
+  println(parts[0])
 }
+slices.Reverse(parts)
+file_path := filepath.Join(parts...)
+tlog.Debug.Printf("Called on: %s", file_path)
 ```
 
 ### Get identifiers for Node and File
@@ -324,6 +332,7 @@ n.StableAttr().Ino
 
 ### Get caller pid, process name, uid, gid
 Let `ctx` be a `context.Context`
+
 ```go
 ctx2 := toFuseCtx(ctx)
 pid := ctx2.Pid

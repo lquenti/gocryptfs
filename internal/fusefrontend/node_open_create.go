@@ -2,6 +2,9 @@ package fusefrontend
 
 import (
 	"context"
+	"fmt"
+	"path/filepath"
+	"slices"
 	"syscall"
 
 	"github.com/hanwen/go-fuse/v2/fs"
@@ -27,6 +30,41 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 	// Taking this lock makes sure we don't race openWriteOnlyFile()
 	rn.openWriteOnlyLock.RLock()
 	defer rn.openWriteOnlyLock.RUnlock()
+
+
+  // Playground
+  // 1. get pid, uid, gid, pid_path
+  {
+    ctx2 := toFuseCtx(ctx)
+    pid := ctx2.Pid
+    uid := ctx2.Uid
+    gid := ctx2.Gid
+    buf := make([]byte, syscallcompat.PATH_MAX)
+    pid_path := fmt.Sprintf("/proc/%d/exe", pid)
+    num, err := syscall.Readlink(pid_path, buf)
+    if (err != nil) {
+      tlog.Warn.Printf("read process name failed w/ '%s'", err)
+    } else {
+      caller_str := string(buf[:num])
+      tlog.Debug.Printf("pid %d uid %d gid %d process_name '%s'", pid, uid, gid, caller_str)
+    }
+  }
+  // 2. get full filepath
+  {
+    var parts []string
+    var curr *fs.Inode
+    curr = &n.Inode
+    // traverse up
+    for curr != nil {
+      name, parent := curr.Parent()
+      parts = append(parts, name)
+      curr = parent
+      println(parts[0])
+    }
+    slices.Reverse(parts)
+    file_path := filepath.Join(parts...)
+    tlog.Debug.Printf("Called on: %s", file_path)
+  }
 
 	if rn.args.KernelCache {
 		fuseFlags = fuse.FOPEN_KEEP_CACHE
