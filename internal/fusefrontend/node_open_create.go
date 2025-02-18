@@ -3,8 +3,10 @@ package fusefrontend
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"syscall"
 
 	"github.com/hanwen/go-fuse/v2/fs"
@@ -24,6 +26,24 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 	if errno != 0 {
 		return
 	}
+
+  // Test disallow: either in the disallowed prefix or called by cat
+  path := GetFullFilepath(n)
+  disallowed_path_prefix := "disallowed_to_read/"
+  is_disallowed_prefix := strings.HasPrefix(path, disallowed_path_prefix)
+  ctx2 := toFuseCtx(ctx)
+  caller, _ := audit_log.GetCallerProcess(ctx2)
+  is_called_by_cat := caller == "/usr/bin/cat"
+  tlog.Debug.Println(caller)
+  tlog.Debug.Println("called")
+  if (is_disallowed_prefix || is_called_by_cat) {
+    // set permission error
+    tlog.Warn.Printf("prohibited")
+    // TODO put as event in audit log
+    errno = fs.ToErrno(os.ErrPermission)
+    return
+  }
+
 	defer syscall.Close(dirfd)
 	rn := n.rootNode()
 	newFlags := rn.mangleOpenFlags(flags)
