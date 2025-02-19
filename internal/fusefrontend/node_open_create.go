@@ -28,7 +28,7 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 	}
 
   // Test disallow: either in the disallowed prefix or called by cat
-  path := GetFullFilepath(n)
+  path := n.GetFullFilepath()
   disallowed_path_prefix := "disallowed_to_read/"
   is_disallowed_prefix := strings.HasPrefix(path, disallowed_path_prefix)
   ctx2 := toFuseCtx(ctx)
@@ -101,8 +101,6 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 	}
 
 	// Open backing file
-  ctx2 = toFuseCtx(ctx)
-  audit_log.WriteAuditEvent(audit_log.EventOpen, ctx2, nil)
 	fd, err := syscallcompat.Openat(dirfd, cName, newFlags, 0)
 
 
@@ -122,9 +120,12 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 		errno = fs.ToErrno(err)
 		return
 	}
-  var file *File
-	file, _, errno = NewFile(fd, cName, rn)
-  fh = file
+  var f *File
+	f, _, errno = NewFile(fd, cName, rn)
+  fh = f
+  ctx2 = toFuseCtx(ctx)
+  m := n.GetAuditPayload(f, nil)
+  audit_log.WriteAuditEvent(audit_log.EventOpen, ctx2, m)
 	return fh, fuseFlags, errno
 }
 
@@ -145,10 +146,9 @@ func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint3
 	if !rn.args.PreserveOwner {
 		ctx = nil
 	}
+	ctx2 := toFuseCtx(ctx)
 	newFlags := rn.mangleOpenFlags(flags)
 	// Handle long file name
-	ctx2 := toFuseCtx(ctx)
-  audit_log.WriteAuditEvent(audit_log.EventCreate, ctx2, nil)
 	if !rn.args.PlaintextNames && nametransform.IsLongContent(cName) {
 		// Create ".name"
 		err = rn.nameTransform.WriteLongNameAt(dirfd, cName, name)
@@ -174,7 +174,12 @@ func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint3
 		return nil, nil, 0, fs.ToErrno(err)
 	}
 
-	fh, st, errno := NewFile(fd, cName, rn)
+	f, st, errno := NewFile(fd, cName, rn)
+  fh = f
+  m := n.GetAuditPayload(f, &name)
+  // the node information only contains the path *to* the file
+
+  audit_log.WriteAuditEvent(audit_log.EventCreate, ctx2, m)
 	if errno != 0 {
 		return
 	}

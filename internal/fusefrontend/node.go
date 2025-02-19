@@ -126,7 +126,8 @@ func (n *Node) Unlink(ctx context.Context, name string) (errno syscall.Errno) {
 		return
 	}
   ctx2 := toFuseCtx(ctx)
-  audit_log.WriteAuditEvent(audit_log.EventUnlink, ctx2, nil)
+  m := n.GetAuditPayload(nil, &name)
+  audit_log.WriteAuditEvent(audit_log.EventUnlink, ctx2, m)
 	defer syscall.Close(dirfd)
 
 	// Delete content
@@ -153,7 +154,8 @@ func (n *Node) Readlink(ctx context.Context) (out []byte, errno syscall.Errno) {
 		return
 	}
   ctx2 := toFuseCtx(ctx)
-  audit_log.WriteAuditEvent(audit_log.EventReadlink, ctx2, nil)
+  m := n.GetAuditPayload(nil, &cName)
+  audit_log.WriteAuditEvent(audit_log.EventReadlink, ctx2, m)
 	defer syscall.Close(dirfd)
 
 	return n.readlink(dirfd, cName)
@@ -264,7 +266,8 @@ func (n *Node) Mknod(ctx context.Context, name string, mode, rdev uint32, out *f
 		return
 	}
   ctx2 := toFuseCtx(ctx)
-  audit_log.WriteAuditEvent(audit_log.EventMknod, ctx2, nil)
+  m := n.GetAuditPayload(nil, &name)
+  audit_log.WriteAuditEvent(audit_log.EventMknod, ctx2, m)
 	defer syscall.Close(dirfd)
 
 	// Make sure context is nil if we don't want to preserve the owner
@@ -445,7 +448,8 @@ func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 		return
 	}
   ctx2 := toFuseCtx(ctx)
-  audit_log.WriteAuditEvent(audit_log.EventRename, ctx2, nil)
+  m := n.GetAuditPayload2(nil, name, newName)
+  audit_log.WriteAuditEvent(audit_log.EventRename, ctx2, m)
 	defer syscall.Close(dirfd)
 
 	n2 := toNode(newParent)

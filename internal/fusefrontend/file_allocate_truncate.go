@@ -48,7 +48,8 @@ func (f *File) Allocate(ctx context.Context, off uint64, sz uint64, mode uint32)
 	}
 
   ctx2 := toFuseCtx(ctx)
-  audit_log.WriteAuditEvent(audit_log.EventAllocate, ctx2, nil)
+  m := f.GetAuditPayload()
+  audit_log.WriteAuditEvent(audit_log.EventAllocate, ctx2, m)
 
 	f.fdLock.RLock()
 	defer f.fdLock.RUnlock()

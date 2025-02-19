@@ -232,10 +232,6 @@ func (f *File) doRead(dst []byte, off uint64, length uint64) ([]byte, syscall.Er
 
 // Read - FUSE call
 func (f *File) Read(ctx context.Context, buf []byte, off int64) (resultData fuse.ReadResult, errno syscall.Errno) {
-  tlog.Debug.Println("before (Read)")
-  tlog.Debug.Printf("file fd %v", f.intFd())
-  tlog.Debug.Println("after (Read)")
-
 	if len(buf) > fuse.MAX_KERNEL_WRITE {
 		// This would crash us due to our fixed-size buffer pool
 		tlog.Warn.Printf("Read: rejecting oversized request with EMSGSIZE, len=%d", len(buf))
@@ -247,9 +243,9 @@ func (f *File) Read(ctx context.Context, buf []byte, off int64) (resultData fuse
 	f.fileTableEntry.ContentLock.RLock()
 	defer f.fileTableEntry.ContentLock.RUnlock()
 
-	tlog.Debug.Printf("ino%d: FUSE Read: offset=%d length=%d", f.qIno.Ino, off, len(buf))
   ctx2 := toFuseCtx(ctx)
-  audit_log.WriteAuditEvent(audit_log.EventRead, ctx2, nil)
+  m := f.GetAuditPayload()
+  audit_log.WriteAuditEvent(audit_log.EventRead, ctx2, m)
 	out, errno := f.doRead(buf[:0], uint64(off), uint64(len(buf)))
 	if errno != 0 {
 		return nil, errno
@@ -391,7 +387,8 @@ func (f *File) Write(ctx context.Context, data []byte, off int64) (uint32, sysca
 		}
 	}
   ctx2 := toFuseCtx(ctx)
-  audit_log.WriteAuditEvent(audit_log.EventWrite, ctx2, nil)
+  m := f.GetAuditPayload()
+  audit_log.WriteAuditEvent(audit_log.EventWrite, ctx2, m)
 	n, errno := f.doWrite(data, off)
 	if errno == 0 {
 		f.lastOpCount = openfiletable.WriteOpCount()
@@ -409,7 +406,8 @@ func (f *File) Release(ctx context.Context) syscall.Errno {
 	f.released = true
 	openfiletable.Unregister(f.qIno)
   ctx2 := toFuseCtx(ctx)
-  audit_log.WriteAuditEvent(audit_log.EventRelease, ctx2, nil)
+  m := f.GetAuditPayload()
+  audit_log.WriteAuditEvent(audit_log.EventRelease, ctx2, m)
 	err := f.fd.Close()
 	f.fdLock.Unlock()
 	return fs.ToErrno(err)
