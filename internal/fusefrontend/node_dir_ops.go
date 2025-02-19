@@ -84,7 +84,8 @@ func (n *Node) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.En
 		context = toFuseCtx(ctx)
 	}
 
-  audit_log.WriteAuditEvent(audit_log.EventMkdir, nil)
+  ctx2 := toFuseCtx(ctx)
+  audit_log.WriteAuditEvent(audit_log.EventMkdir, ctx2, nil)
 
 	var st syscall.Stat_t
 	if rn.args.PlaintextNames {
@@ -256,7 +257,8 @@ func (n *Node) Rmdir(ctx context.Context, name string) (code syscall.Errno) {
 	if errno != 0 {
 		return errno
 	}
-  audit_log.WriteAuditEvent(audit_log.EventRmdir, nil)
+  ctx2 := toFuseCtx(ctx)
+  audit_log.WriteAuditEvent(audit_log.EventRmdir, ctx2, nil)
 	defer syscall.Close(parentDirFd)
 	if rn.args.PlaintextNames {
 		// Unlinkat with AT_REMOVEDIR is equivalent to Rmdir

@@ -248,7 +248,8 @@ func (f *File) Read(ctx context.Context, buf []byte, off int64) (resultData fuse
 	defer f.fileTableEntry.ContentLock.RUnlock()
 
 	tlog.Debug.Printf("ino%d: FUSE Read: offset=%d length=%d", f.qIno.Ino, off, len(buf))
-  audit_log.WriteAuditEvent(audit_log.EventRead, nil)
+  ctx2 := toFuseCtx(ctx)
+  audit_log.WriteAuditEvent(audit_log.EventRead, ctx2, nil)
 	out, errno := f.doRead(buf[:0], uint64(off), uint64(len(buf)))
 	if errno != 0 {
 		return nil, errno
@@ -389,7 +390,8 @@ func (f *File) Write(ctx context.Context, data []byte, off int64) (uint32, sysca
 			return 0, errno
 		}
 	}
-  audit_log.WriteAuditEvent(audit_log.EventWrite, nil)
+  ctx2 := toFuseCtx(ctx)
+  audit_log.WriteAuditEvent(audit_log.EventWrite, ctx2, nil)
 	n, errno := f.doWrite(data, off)
 	if errno == 0 {
 		f.lastOpCount = openfiletable.WriteOpCount()
@@ -406,7 +408,8 @@ func (f *File) Release(ctx context.Context) syscall.Errno {
 	}
 	f.released = true
 	openfiletable.Unregister(f.qIno)
-  audit_log.WriteAuditEvent(audit_log.EventRelease, nil)
+  ctx2 := toFuseCtx(ctx)
+  audit_log.WriteAuditEvent(audit_log.EventRelease, ctx2, nil)
 	err := f.fd.Close()
 	f.fdLock.Unlock()
 	return fs.ToErrno(err)

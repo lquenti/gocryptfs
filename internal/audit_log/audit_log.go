@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/rfjakob/gocryptfs/v2/internal/tlog"
 )
 
@@ -62,7 +63,20 @@ func (ae AuditEvent) String() string {
 
 // Lets manually build the JSON, in order to make sure that it'll forever keep
 // newline delimited
-const baseJsonString = "{\"eventType\": \"%s\", \"timestamp\": \"%s\", \"payload\": %s}"
+const baseJsonString = "{\"eventType\": \"%s\", \"timestamp\": \"%s\", %s \"payload\": %s}"
+
+func formatCaller(ctx *fuse.Context) string {
+  if ctx == nil {
+    return ""
+  }
+  caller_str, err := GetCallerProcess(ctx)
+  if (err != nil) {
+    caller_str = "" // already logged before, I dont have a better idea
+  }
+  return fmt.Sprintf(
+    "\"context\": {\"pid\": %d, \"uid\": %d, \"gid\": %d, \"caller_process\": \"%s\"}",
+    ctx.Pid, ctx.Uid, ctx.Gid, caller_str)
+}
 
 func formatMap(m map[string]string) string {
   if m == nil || len(m) == 0 {
@@ -83,9 +97,9 @@ func formatMap(m map[string]string) string {
   return sb.String()
 }
 
-func formatEvent(etype AuditEvent, m map[string]string) string {
+func formatEvent(etype AuditEvent, ctx *fuse.Context, m map[string]string) string {
   timestamp := time.Now().Format("2006-01-02T15:04:05")
-  return fmt.Sprintf(baseJsonString, etype, timestamp, formatMap(m))
+  return fmt.Sprintf(baseJsonString, etype, timestamp, formatCaller(ctx), formatMap(m))
 }
 
 type auditHandle struct {
@@ -102,13 +116,32 @@ func StartAuditTrail() error {
     tlog.Fatal.Printf("Failed to open or create audit log file: %v", err)
     return err
 	}
-  if err := WriteAuditEvent(EventStartAuditTrail, nil); err != nil {
+  if err := WriteAuditEvent(EventStartAuditTrail, nil, nil); err != nil {
 		return err
 	}
   return nil
 }
 
-func WriteAuditEvent(etype AuditEvent, m map[string]string) error {
+/*
+This is the resulting event (unminified)
+```
+{
+  "eventType": "SomeIdentifier",
+  "timestamp": "2025-02-17T11:48:00",
+  "context": { // Only existing if it is a FUSE event
+    "uid": 1337,
+    "pid": 1000,
+    "gid": 1000,
+    "caller_process": "/usr/bin/cat"
+  },
+  "payload": [
+    // Optional payload, based on event
+  ]
+}
+```
+`ctx` maps to "context", `payload` to "payload"
+ */
+func WriteAuditEvent(etype AuditEvent, ctx *fuse.Context, payload map[string]string) error {
 	if globalHandle.fileHandle == nil {
     // Either false call order (unlikely) or concurrent write-after-close (bad)
     error_str := "WriteAuditEvent called on nil fileHandle"
@@ -117,7 +150,7 @@ func WriteAuditEvent(etype AuditEvent, m map[string]string) error {
 	}
   globalHandle.mu.Lock()
   defer globalHandle.mu.Unlock()
-  str := formatEvent(etype, m)
+  str := formatEvent(etype, ctx, payload)
 	_, err := globalHandle.fileHandle.WriteString(str + "\n")
 	if err != nil {
 		tlog.Fatal.Printf("Failed to write audit event: %v", err)
@@ -127,7 +160,7 @@ func WriteAuditEvent(etype AuditEvent, m map[string]string) error {
 }
 
 func EndAuditTrail() error {
-  if err := WriteAuditEvent(EventEndAuditTrail, nil); err != nil {
+  if err := WriteAuditEvent(EventEndAuditTrail, nil, nil); err != nil {
 		return err
 	}
 

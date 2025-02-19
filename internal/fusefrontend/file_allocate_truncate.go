@@ -47,7 +47,8 @@ func (f *File) Allocate(ctx context.Context, off uint64, sz uint64, mode uint32)
 		return syscall.EOPNOTSUPP
 	}
 
-  audit_log.WriteAuditEvent(audit_log.EventAllocate, nil)
+  ctx2 := toFuseCtx(ctx)
+  audit_log.WriteAuditEvent(audit_log.EventAllocate, ctx2, nil)
 
 	f.fdLock.RLock()
 	defer f.fdLock.RUnlock()

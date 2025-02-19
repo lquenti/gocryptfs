@@ -100,7 +100,8 @@ func (f *File) Lseek(ctx context.Context, off uint64, whence uint32) (uint64, sy
 		return MinusOne, syscall.ENXIO
 	}
 
-  audit_log.WriteAuditEvent(audit_log.EventRename, nil)
+  ctx2 := toFuseCtx(ctx)
+  audit_log.WriteAuditEvent(audit_log.EventRename, ctx2, nil)
 
 	// Round down to start of block:
 	cipherOff := f.rootNode.contentEnc.BlockNoToCipherOff(f.rootNode.contentEnc.PlainOffToBlockNo(off))

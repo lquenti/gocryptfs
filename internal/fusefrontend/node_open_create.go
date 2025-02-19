@@ -91,7 +91,8 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 	}
 
 	// Open backing file
-  audit_log.WriteAuditEvent(audit_log.EventOpen, nil)
+  ctx2 = toFuseCtx(ctx)
+  audit_log.WriteAuditEvent(audit_log.EventOpen, ctx2, nil)
 	fd, err := syscallcompat.Openat(dirfd, cName, newFlags, 0)
 
 
@@ -137,7 +138,7 @@ func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint3
 	newFlags := rn.mangleOpenFlags(flags)
 	// Handle long file name
 	ctx2 := toFuseCtx(ctx)
-  audit_log.WriteAuditEvent(audit_log.EventCreate, nil)
+  audit_log.WriteAuditEvent(audit_log.EventCreate, ctx2, nil)
 	if !rn.args.PlaintextNames && nametransform.IsLongContent(cName) {
 		// Create ".name"
 		err = rn.nameTransform.WriteLongNameAt(dirfd, cName, name)
