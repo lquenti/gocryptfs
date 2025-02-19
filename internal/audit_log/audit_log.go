@@ -43,8 +43,8 @@ const (
 var eventName = map[AuditEvent]string {
   EventStartAuditTrail: "startAuditTrail",
   EventEndAuditTrail: "endAuditTrail",
-  EventProhibitedPathPrefix: "eventProhibitedPathPrefix",
-  EventProhibitedCaller: "eventProhibitedCaller",
+  EventProhibitedPathPrefix: "prohibitedPathPrefix",
+  EventProhibitedCaller: "prohibitedCaller",
 
   EventOpen: "open",
   EventCreate: "create",

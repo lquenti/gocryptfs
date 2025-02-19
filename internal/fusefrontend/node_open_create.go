@@ -39,12 +39,16 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
   tlog.Debug.Println("called")
 
   if (is_disallowed_prefix || is_called_by_cat) {
+    m := make(map[string]string)
     if (is_disallowed_prefix) {
       tlog.Warn.Printf("prohibited because of prefix \"%s\"", disallowed_path_prefix)
-      audit_log.WriteAuditEvent(audit_log.EventProhibitedPathPrefix, ctx2, nil)
+      m["path"] = path
+      m["matching_rule"] = disallowed_path_prefix
+      audit_log.WriteAuditEvent(audit_log.EventProhibitedPathPrefix, ctx2, m)
     }  else { // is_called_by_cat
+      m["disallowed_binary"] = disallowed_binary
       tlog.Warn.Printf("prohibited because called by \"%s\"", disallowed_binary)
-      audit_log.WriteAuditEvent(audit_log.EventProhibitedCaller, ctx2, nil)
+      audit_log.WriteAuditEvent(audit_log.EventProhibitedCaller, ctx2, m)
     }
     errno = fs.ToErrno(os.ErrPermission)
     return
