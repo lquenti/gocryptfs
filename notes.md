@@ -324,10 +324,64 @@ tlog.Debug.Printf("Called on: %s", file_path)
 ```
 
 ### Get identifiers for Node and File
-(Currently not happy with it, but hte best I've got so far)
-```go
-f.intFd()
-n.StableAttr().Ino
+#### Files
+Use the triple
+```
+dev := file.qIno.Dev
+tag := file.qIno.Tag
+ino := file.qIno.Ino
+```
+
+This works since
+```
+type namespaceData struct {
+	// Stat_t.Dev is uint64 on 32- and 64-bit Linux
+	Dev uint64
+	// Tag acts like an extension of the Dev field.
+	// It is used by reverse mode for virtual files.
+	// Normal (forward) mode does not use it and it
+	// stays always zero there.
+	Tag uint8
+}
+
+// QIno = Qualified Inode number.
+// Uniquely identifies a backing file through the
+// (device number, tag, inode number) tuple.
+type QIno struct {
+	namespaceData
+	// Stat_t.Ino is uint64 on 32- and 64-bit Linu
+	Ino uint64
+}
+```
+
+#### Nodes
+Use the tuple of
+```
+ino := n.Inode.StableAttr().Ino
+gen := n.Inode.StableAttr().Gen
+```
+This works since
+```
+// StableAttr holds immutable attributes of a object in the filesystem.
+type StableAttr struct {
+	// Each Inode has a type, which does not change over the
+	// lifetime of the inode, for example fuse.S_IFDIR. The default (0)
+	// is interpreted as S_IFREG (regular file).
+	Mode uint32
+
+	// The inode number must be unique among the currently live
+	// objects in the file system. It is used to communicate to
+	// the kernel about this file object. The value uint64(-1)
+	// is reserved. When using Ino==0, a unique, sequential
+	// number is assigned (starting at 2^63 by default) on Inode creation.
+	Ino uint64
+
+	// When reusing a previously used inode number for a new
+	// object, the new object must have a different Gen
+	// number. This is irrelevant if the FS is not exported over
+	// NFS
+	Gen uint64
+}
 ```
 
 ### Get caller pid, process name, uid, gid
