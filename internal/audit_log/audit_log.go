@@ -20,6 +20,8 @@ const (
   // Synthetic events
   EventStartAuditTrail AuditEvent = iota
   EventEndAuditTrail AuditEvent = iota
+  EventProhibitedPathPrefix = iota
+  EventProhibitedCaller = iota
 
   // FUSE events
   EventOpen AuditEvent = iota
@@ -41,6 +43,9 @@ const (
 var eventName = map[AuditEvent]string {
   EventStartAuditTrail: "startAuditTrail",
   EventEndAuditTrail: "endAuditTrail",
+  EventProhibitedPathPrefix: "eventProhibitedPathPrefix",
+  EventProhibitedCaller: "eventProhibitedCaller",
+
   EventOpen: "open",
   EventCreate: "create",
   EventRelease: "release",
