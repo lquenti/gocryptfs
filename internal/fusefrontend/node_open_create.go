@@ -3,10 +3,7 @@ package fusefrontend
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
-	"slices"
-	"strings"
 	"syscall"
 
 	"github.com/hanwen/go-fuse/v2/fs"
@@ -28,31 +25,31 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 	}
 
   // Test disallow: either in the disallowed prefix or called by cat
-  path := n.GetFullFilepath()
-  disallowed_path_prefix := "disallowed_to_read/"
-  is_disallowed_prefix := strings.HasPrefix(path, disallowed_path_prefix)
-  ctx2 := toFuseCtx(ctx)
-  caller, _ := audit_log.GetCallerProcess(ctx2)
-  disallowed_binary := "/usr/bin/cat"
-  is_called_by_cat := caller == disallowed_binary
-  tlog.Debug.Println(caller)
-  tlog.Debug.Println("called")
-
-  if (is_disallowed_prefix || is_called_by_cat) {
-    m := make(map[string]string)
-    if (is_disallowed_prefix) {
-      tlog.Warn.Printf("prohibited because of prefix \"%s\"", disallowed_path_prefix)
-      m["path"] = path
-      m["matching_rule"] = disallowed_path_prefix
-      audit_log.WriteAuditEvent(audit_log.EventProhibitedPathPrefix, ctx2, m)
-    }  else { // is_called_by_cat
-      m["disallowed_binary"] = disallowed_binary
-      tlog.Warn.Printf("prohibited because called by \"%s\"", disallowed_binary)
-      audit_log.WriteAuditEvent(audit_log.EventProhibitedCaller, ctx2, m)
-    }
-    errno = fs.ToErrno(os.ErrPermission)
-    return
-  }
+  // path := n.GetFullFilepath()
+  // disallowed_path_prefix := "disallowed_to_read/"
+  // is_disallowed_prefix := strings.HasPrefix(path, disallowed_path_prefix)
+  // ctx2 := toFuseCtx(ctx)
+  // caller, _ := audit_log.GetCallerProcess(ctx2)
+  // disallowed_binary := "/usr/bin/cat"
+  // is_called_by_cat := caller == disallowed_binary
+  // tlog.Debug.Println(caller)
+  // tlog.Debug.Println("called")
+  //
+  // if (is_disallowed_prefix || is_called_by_cat) {
+  //   m := make(map[string]string)
+  //   if (is_disallowed_prefix) {
+  //     tlog.Warn.Printf("prohibited because of prefix \"%s\"", disallowed_path_prefix)
+  //     m["path"] = path
+  //     m["matching_rule"] = disallowed_path_prefix
+  //     audit_log.WriteAuditEvent(audit_log.EventProhibitedPathPrefix, ctx2, m)
+  //   }  else { // is_called_by_cat
+  //     m["disallowed_binary"] = disallowed_binary
+  //     tlog.Warn.Printf("prohibited because called by \"%s\"", disallowed_binary)
+  //     audit_log.WriteAuditEvent(audit_log.EventProhibitedCaller, ctx2, m)
+  //   }
+  //   errno = fs.ToErrno(os.ErrPermission)
+  //   return
+  // }
 
 	defer syscall.Close(dirfd)
 	rn := n.rootNode()
@@ -80,21 +77,21 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
     }
   }
   // 2. get full filepath
-  {
-    var parts []string
-    var curr *fs.Inode
-    curr = &n.Inode
-    // traverse up
-    for curr != nil {
-      name, parent := curr.Parent()
-      parts = append(parts, name)
-      curr = parent
-      println(parts[0])
-    }
-    slices.Reverse(parts)
-    file_path := filepath.Join(parts...)
-    tlog.Debug.Printf("Called on: %s", file_path)
-  }
+  // {
+  //   var parts []string
+  //   var curr *fs.Inode
+  //   curr = &n.Inode
+  //   // traverse up
+  //   for curr != nil {
+  //     name, parent := curr.Parent()
+  //     parts = append(parts, name)
+  //     curr = parent
+  //     println(parts[0])
+  //   }
+  //   slices.Reverse(parts)
+  //   file_path := filepath.Join(parts...)
+  //   tlog.Debug.Printf("OPEN Called on: %s", file_path)
+  // }
 
 	if rn.args.KernelCache {
 		fuseFlags = fuse.FOPEN_KEEP_CACHE
@@ -121,9 +118,9 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 		return
 	}
   var f *File
-	f, _, errno = NewFile(fd, cName, rn)
+	f, _, errno = NewFile(fd, cName, rn, n.GetFullFilepath())
   fh = f
-  ctx2 = toFuseCtx(ctx)
+  ctx2 := toFuseCtx(ctx)
   m := n.GetAuditPayload(f, nil)
   audit_log.WriteAuditEvent(audit_log.EventOpen, ctx2, m)
 	return fh, fuseFlags, errno
@@ -174,7 +171,11 @@ func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint3
 		return nil, nil, 0, fs.ToErrno(err)
 	}
 
-	f, st, errno := NewFile(fd, cName, rn)
+  // It is not yet part of the node path since it does not yet exists
+  // (This is not the case when Open-ing files)
+  file_path := filepath.Join(n.GetFullFilepath(), name)
+
+	f, st, errno := NewFile(fd, cName, rn, file_path)
   fh = f
   m := n.GetAuditPayload(f, &name)
   // the node information only contains the path *to* the file
