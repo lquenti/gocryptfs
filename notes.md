@@ -402,3 +402,54 @@ if (err != nil) {
   tlog.Debug.Printf("pid %d uid %d gid %d process_name '%s'", pid, uid, gid, caller_str)
 }
 ```
+
+## Notes on Per-File encryption (TODO translate to english)
+notes:
+- ich dachte zuerst es wird jedes mal ein key derived... war nicht der fall
+  - aber es gibt 2 keys basierend auf den master key
+- Jeder hat einfach einen pointer auf *das selbe* globale contentEnc object
+  - Dieses contentEnc hat ein cryptoCore object, und DAS hat nen interface object (AEADCipher)
+    - Je nachdem, welchen Cryptoalgorithmus man nehmen will
+    - Mit Go's structural typing kann mein Editor nicht mal auflösen WER es implementiert
+      - (`sivAead`, `stupidXchacha20poly1305`, `stupidAEADCommon`)
+- Die CryptoCore objekte werden einmal in cryptocore.New erstellt, und DA kann man nen key übergeben
+  - von dem werden dann via HKDF 2 keys derived
+    - für filenames via AES-256-EME
+    - für file contents via AES-256-GCM
+  - DIe wird nur EINMAL aufgerufen, beim mounten
+  - Der masterkey wird danach natürlich genulled somit ist der weg! (mount.go:336)
+
+- Strategie:
+  - Bei File obj erstellung nen neues cEnc erstellen und in das fileobj injecten
+    - Funktion: `NewFile`, aufgerufen von: `Create`, `Open` (called by fuse)
+    - Prerequisite: `NewFile` braucht den full path für key value pairs
+    - Dort wird dann basierend auf den path nen request zu machen
+      - wenn N mal versucht und nicht erreicht, dann panicF
+      - `keylen` kriegt man von `rootNode IVLen`
+    - aus mount.go (wo es beim rootnode aufgerufen wird)
+    - `cCore := cryptocore.New(masterkey, cryptoBackend, IVBits, args.hkdf)`
+      - [x] `masterkey`: Wollen wir durch unseren ersetzen
+      - [x] `cryptoBackend`: Ist nen `AEADTypeEnum`, kann man aus den RootNode kriegen
+      - [x] `IVBits` Root nodes `cryptCore.IVLen * 8`
+      - [x] `args.hkdf`: ist okay, disablen wir dass man es deaktivieren kann :D
+	  - `cEnc := contentenc.New(cCore, contentenc.DefaultBS)`
+      - [x] `cCore`: s.Oben
+      - [x] `contentenc.DefaultBS`: Ne global constant
+    - WICHTIG: Danach den erfundenen key im RAM NULLen
+
+- Steps:
+  - [x] Web service bauen: nimmt JSON an und returned nen key
+    - `{ "path": "/some/path", "keylen": 8 }`
+    - Speichert in-memory in nem dict who cares
+  - [x] `NewFile` erweitern mit full path
+  - [ ] In new path in ner loop versuchen den request zu machen (erstmal hardcoded gegen localhost:5000)
+    - aus mount.go (wo es beim rootnode aufgerufen wird)
+    - `cCore := cryptocore.New(masterkey, cryptoBackend, IVBits, args.hkdf)`
+      - [x] `masterkey`: Wollen wir durch unseren ersetzen
+      - [x] `cryptoBackend`: Ist nen `AEADTypeEnum`, kann man aus den RootNode kriegen
+      - [x] `IVBits` Root nodes `cryptCore.IVLen * 8`
+      - [x] `args.hkdf`: ist okay, disablen wir dass man es deaktivieren kann :D
+	  - `cEnc := contentenc.New(cCore, contentenc.DefaultBS)`
+      - [x] `cCore`: s.Oben
+      - [x] `contentenc.DefaultBS`: Ne global constant
+    - WICHTIG: Danach den erfundenen key im RAM NULLen
