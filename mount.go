@@ -22,6 +22,7 @@ import (
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 
+	"github.com/rfjakob/gocryptfs/v2/internal/audit_log"
 	"github.com/rfjakob/gocryptfs/v2/internal/configfile"
 	"github.com/rfjakob/gocryptfs/v2/internal/contentenc"
 	"github.com/rfjakob/gocryptfs/v2/internal/cryptocore"
@@ -104,6 +105,9 @@ func doMount(args *argContainer) {
 			}
 		}()
 	}
+  // init audit trail TODO parametrize
+  audit_log.StartAuditTrail()
+  defer audit_log.EndAuditTrail()
 	// Initialize gocryptfs (read config file, ask for password, ...)
 	fs, wipeKeys := initFuseFrontend(args)
 	// Try to wipe secret keys from memory after unmount
@@ -491,6 +495,11 @@ func initGoFuse(rootNode fs.InodeEmbedder, args *argContainer) *fuse.Server {
 		}
 	}
 
+  tlog.Debug.Println("---- rootNode ---")
+  tlog.Debug.Println(rootNode)
+  tlog.Debug.Println("---- fuseOpts ---")
+  tlog.Debug.Println(fuseOpts)
+  tlog.Debug.Println("---- end---")
 	srv, err := fs.Mount(args.mountpoint, rootNode, fuseOpts)
 	if err != nil {
 		tlog.Fatal.Printf("fs.Mount failed: %s", strings.TrimSpace(err.Error()))

@@ -5,11 +5,14 @@ package fusefrontend
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"math"
+	"net/http"
 	"os"
 	"sync"
 	"syscall"
@@ -17,7 +20,9 @@ import (
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 
+	"github.com/rfjakob/gocryptfs/v2/internal/audit_log"
 	"github.com/rfjakob/gocryptfs/v2/internal/contentenc"
+	"github.com/rfjakob/gocryptfs/v2/internal/cryptocore"
 	"github.com/rfjakob/gocryptfs/v2/internal/inomap"
 	"github.com/rfjakob/gocryptfs/v2/internal/openfiletable"
 	"github.com/rfjakob/gocryptfs/v2/internal/syscallcompat"
@@ -57,7 +62,7 @@ type File struct {
 // is returned because node.Create() needs it.
 //
 // `cName` is only used for error logging and may be left blank.
-func NewFile(fd int, cName string, rn *RootNode) (f *File, st *syscall.Stat_t, errno syscall.Errno) {
+func NewFile(fd int, cName string, rn *RootNode, path string) (f *File, st *syscall.Stat_t, errno syscall.Errno) {
 	// Need device number and inode number for openfiletable locking
 	st = &syscall.Stat_t{}
 	if err := syscall.Fstat(fd, st); err != nil {
@@ -69,9 +74,76 @@ func NewFile(fd int, cName string, rn *RootNode) (f *File, st *syscall.Stat_t, e
 
 	osFile := os.NewFile(uintptr(fd), cName)
 
+  // TODO refactor me out
+  url := "http://localhost:5000"
+  payload := map[string]any {
+    "path": path,
+    "keylen": 32,
+  }
+  payloadBytes, err := json.Marshal(payload)
+  if err != nil {
+		log.Panicf("Error marshalling JSON: %v", err)
+  }
+
+  var kmsKey []byte
+  success := false
+  nAttempt := 5
+  // Lets not fail after 1 time
+  for attempt := 1; attempt <= nAttempt; attempt++ {
+    resp, err := http.Post(url, "application/json", bytes.NewBuffer(payloadBytes))
+    if err != nil {
+      tlog.Warn.Printf("Error sending request to KMS: %v", err)
+      continue
+    }
+
+    defer resp.Body.Close()
+    body, err := io.ReadAll(resp.Body)
+    if err != nil {
+      tlog.Warn.Printf("Error reading response from KMS: %v", err)
+      continue
+    }
+
+    // Structure: {"key": "BASE64_ENCODED_KEY_OF_DECODED_LENGTH_keylen"}
+    jsonStr := string(body)
+    var data map[string]interface{}
+    err = json.Unmarshal([]byte(jsonStr), &data)
+    if err != nil {
+      tlog.Warn.Printf("Error unmarshaling response from KMS: %v", err)
+      continue
+    }
+    base64key, ok := data["key"].(string)
+    if !ok {
+      tlog.Warn.Println("JSON key attribute is not a string")
+      continue
+    }
+    kmsKey, err = base64.StdEncoding.DecodeString(base64key)
+    if err != nil {
+		  tlog.Warn.Printf("Error decoding base64: %v", err)
+    }
+    success = true
+  }
+  if !success {
+    log.Panicf("Fetching KMS key failed after %d tries", nAttempt)
+  }
+
+  // Create a new cryptoCore with 2 HKDF keys
+  // See mount.go for how it gets created for the RootNode
+  // TODO args.hkdf IS HARDCODED TO TRUE
+  cryptoBackend := rn.contentEnc.GetAEADBackend()
+  ivBits := rn.contentEnc.GetIVLen()*8
+  tlog.Debug.Printf("Expected bits: %d, actual bits: %d", ivBits, len(kmsKey)*8)
+  cCore := cryptocore.New(kmsKey, cryptoBackend, ivBits, true)
+	cEnc := contentenc.New(cCore, contentenc.DefaultBS)
+  for i := range kmsKey {
+    kmsKey[i] = 0
+  }
+
+
+
 	f = &File{
 		fd:             osFile,
-		contentEnc:     rn.contentEnc,
+		//contentEnc:     rn.contentEnc,
+		contentEnc:     cEnc,
 		qIno:           qi,
 		fileTableEntry: e,
 		rootNode:       rn,
@@ -242,7 +314,9 @@ func (f *File) Read(ctx context.Context, buf []byte, off int64) (resultData fuse
 	f.fileTableEntry.ContentLock.RLock()
 	defer f.fileTableEntry.ContentLock.RUnlock()
 
-	tlog.Debug.Printf("ino%d: FUSE Read: offset=%d length=%d", f.qIno.Ino, off, len(buf))
+  ctx2 := toFuseCtx(ctx)
+  m := f.GetAuditPayload()
+  audit_log.WriteAuditEvent(audit_log.EventRead, ctx2, m)
 	out, errno := f.doRead(buf[:0], uint64(off), uint64(len(buf)))
 	if errno != 0 {
 		return nil, errno
@@ -383,6 +457,9 @@ func (f *File) Write(ctx context.Context, data []byte, off int64) (uint32, sysca
 			return 0, errno
 		}
 	}
+  ctx2 := toFuseCtx(ctx)
+  m := f.GetAuditPayload()
+  audit_log.WriteAuditEvent(audit_log.EventWrite, ctx2, m)
 	n, errno := f.doWrite(data, off)
 	if errno == 0 {
 		f.lastOpCount = openfiletable.WriteOpCount()
@@ -399,6 +476,9 @@ func (f *File) Release(ctx context.Context) syscall.Errno {
 	}
 	f.released = true
 	openfiletable.Unregister(f.qIno)
+  ctx2 := toFuseCtx(ctx)
+  m := f.GetAuditPayload()
+  audit_log.WriteAuditEvent(audit_log.EventRelease, ctx2, m)
 	err := f.fd.Close()
 	f.fdLock.Unlock()
 	return fs.ToErrno(err)
@@ -426,6 +506,7 @@ func (f *File) Fsync(ctx context.Context, flags uint32) (errno syscall.Errno) {
 
 // Getattr FUSE call (like stat)
 func (f *File) Getattr(ctx context.Context, a *fuse.AttrOut) syscall.Errno {
+  tlog.Debug.Println("File getattr")
 	f.fdLock.RLock()
 	defer f.fdLock.RUnlock()
 

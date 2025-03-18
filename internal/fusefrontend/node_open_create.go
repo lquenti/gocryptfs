@@ -2,11 +2,14 @@ package fusefrontend
 
 import (
 	"context"
+	"fmt"
+	"path/filepath"
 	"syscall"
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 
+	"github.com/rfjakob/gocryptfs/v2/internal/audit_log"
 	"github.com/rfjakob/gocryptfs/v2/internal/nametransform"
 	"github.com/rfjakob/gocryptfs/v2/internal/syscallcompat"
 	"github.com/rfjakob/gocryptfs/v2/internal/tlog"
@@ -20,13 +23,75 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 	if errno != 0 {
 		return
 	}
-	defer syscall.Close(dirfd)
 
+  // Test disallow: either in the disallowed prefix or called by cat
+  // path := n.GetFullFilepath()
+  // disallowed_path_prefix := "disallowed_to_read/"
+  // is_disallowed_prefix := strings.HasPrefix(path, disallowed_path_prefix)
+  // ctx2 := toFuseCtx(ctx)
+  // caller, _ := audit_log.GetCallerProcess(ctx2)
+  // disallowed_binary := "/usr/bin/cat"
+  // is_called_by_cat := caller == disallowed_binary
+  // tlog.Debug.Println(caller)
+  // tlog.Debug.Println("called")
+  //
+  // if (is_disallowed_prefix || is_called_by_cat) {
+  //   m := make(map[string]string)
+  //   if (is_disallowed_prefix) {
+  //     tlog.Warn.Printf("prohibited because of prefix \"%s\"", disallowed_path_prefix)
+  //     m["path"] = path
+  //     m["matching_rule"] = disallowed_path_prefix
+  //     audit_log.WriteAuditEvent(audit_log.EventProhibitedPathPrefix, ctx2, m)
+  //   }  else { // is_called_by_cat
+  //     m["disallowed_binary"] = disallowed_binary
+  //     tlog.Warn.Printf("prohibited because called by \"%s\"", disallowed_binary)
+  //     audit_log.WriteAuditEvent(audit_log.EventProhibitedCaller, ctx2, m)
+  //   }
+  //   errno = fs.ToErrno(os.ErrPermission)
+  //   return
+  // }
+
+	defer syscall.Close(dirfd)
 	rn := n.rootNode()
 	newFlags := rn.mangleOpenFlags(flags)
 	// Taking this lock makes sure we don't race openWriteOnlyFile()
 	rn.openWriteOnlyLock.RLock()
 	defer rn.openWriteOnlyLock.RUnlock()
+
+
+  // Playground
+  // 1. get pid, uid, gid, pid_path
+  {
+    ctx2 := toFuseCtx(ctx)
+    pid := ctx2.Pid
+    uid := ctx2.Uid
+    gid := ctx2.Gid
+    buf := make([]byte, syscallcompat.PATH_MAX)
+    pid_path := fmt.Sprintf("/proc/%d/exe", pid)
+    num, err := syscall.Readlink(pid_path, buf)
+    if (err != nil) {
+      tlog.Warn.Printf("read process name failed w/ '%s'", err)
+    } else {
+      caller_str := string(buf[:num])
+      tlog.Debug.Printf("pid %d uid %d gid %d process_name '%s'", pid, uid, gid, caller_str)
+    }
+  }
+  // 2. get full filepath
+  // {
+  //   var parts []string
+  //   var curr *fs.Inode
+  //   curr = &n.Inode
+  //   // traverse up
+  //   for curr != nil {
+  //     name, parent := curr.Parent()
+  //     parts = append(parts, name)
+  //     curr = parent
+  //     println(parts[0])
+  //   }
+  //   slices.Reverse(parts)
+  //   file_path := filepath.Join(parts...)
+  //   tlog.Debug.Printf("OPEN Called on: %s", file_path)
+  // }
 
 	if rn.args.KernelCache {
 		fuseFlags = fuse.FOPEN_KEEP_CACHE
@@ -34,6 +99,8 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 
 	// Open backing file
 	fd, err := syscallcompat.Openat(dirfd, cName, newFlags, 0)
+
+
 	// Handle a few specific errors
 	if err != nil {
 		if err == syscall.EMFILE {
@@ -50,7 +117,12 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 		errno = fs.ToErrno(err)
 		return
 	}
-	fh, _, errno = NewFile(fd, cName, rn)
+  var f *File
+	f, _, errno = NewFile(fd, cName, rn, n.GetFullFilepath())
+  fh = f
+  ctx2 := toFuseCtx(ctx)
+  m := n.GetAuditPayload(f, nil)
+  audit_log.WriteAuditEvent(audit_log.EventOpen, ctx2, m)
 	return fh, fuseFlags, errno
 }
 
@@ -71,9 +143,9 @@ func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint3
 	if !rn.args.PreserveOwner {
 		ctx = nil
 	}
+	ctx2 := toFuseCtx(ctx)
 	newFlags := rn.mangleOpenFlags(flags)
 	// Handle long file name
-	ctx2 := toFuseCtx(ctx)
 	if !rn.args.PlaintextNames && nametransform.IsLongContent(cName) {
 		// Create ".name"
 		err = rn.nameTransform.WriteLongNameAt(dirfd, cName, name)
@@ -99,7 +171,16 @@ func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint3
 		return nil, nil, 0, fs.ToErrno(err)
 	}
 
-	fh, st, errno := NewFile(fd, cName, rn)
+  // It is not yet part of the node path since it does not yet exists
+  // (This is not the case when Open-ing files)
+  file_path := filepath.Join(n.GetFullFilepath(), name)
+
+	f, st, errno := NewFile(fd, cName, rn, file_path)
+  fh = f
+  m := n.GetAuditPayload(f, &name)
+  // the node information only contains the path *to* the file
+
+  audit_log.WriteAuditEvent(audit_log.EventCreate, ctx2, m)
 	if errno != 0 {
 		return
 	}
