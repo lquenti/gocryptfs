@@ -61,6 +61,8 @@ type argContainer struct {
 	_explicitScryptn bool
   // full URL to key management server endpoint
   kms string
+  // Output path for audit log
+  audit_log_path string
 }
 
 var flagSet *flag.FlagSet
@@ -215,6 +217,7 @@ func parseCliOpts(osArgs []string) (args argContainer) {
 	flagSet.StringVar(&args.fido2, "fido2", "", "Protect the masterkey using a FIDO2 token instead of a password")
 	flagSet.StringArrayVar(&args.fido2_assert_options, "fido2-assert-option", nil, "Options to be passed with `fido2-assert -t`")
   flagSet.StringVar(&args.kms, "kms", "", "Full URL to Key Management Server to enable per-file encryption")
+  flagSet.StringVar(&args.audit_log_path, "audit_log_path", "", "Output path for audit log")
 
 	// Exclusion options
 	flagSet.StringArrayVar(&args.exclude, "e", nil, "Alias for -exclude")
