@@ -1,0 +1,7 @@
+any(pid = 10000, 1000 = pid, path_prefix = "/disallowed");
+all(uid != 1337, any());
+
+# TODOs:
+# - Do we want to do arithmetic? (Not for now)
+# - Do not allow multiline string
+# - Newlines (outside of are ignored/handled like any other whitespace
