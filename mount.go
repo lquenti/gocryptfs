@@ -105,7 +105,9 @@ func doMount(args *argContainer) {
 			}
 		}()
 	}
-  audit_log.StartAuditTrail()
+  if args.audit_log_path != "" {
+    audit_log.StartAuditTrail(args.audit_log_path)
+  }
   defer audit_log.EndAuditTrail()
 	// Initialize gocryptfs (read config file, ask for password, ...)
 	fs, wipeKeys := initFuseFrontend(args)

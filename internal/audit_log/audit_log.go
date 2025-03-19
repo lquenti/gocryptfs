@@ -1,7 +1,6 @@
 package audit_log
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -11,8 +10,6 @@ import (
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/rfjakob/gocryptfs/v2/internal/tlog"
 )
-
-const auditLogPath = "/tmp/current_audit_log"
 
 // Define as enum to make sure that no undefined events can be written out
 type AuditEvent int
@@ -110,16 +107,23 @@ func formatEvent(etype AuditEvent, ctx *fuse.Context, m map[string]string) strin
 type auditHandle struct {
   mu sync.Mutex
   fileHandle *os.File
+  enabled bool
 }
 
-var globalHandle auditHandle
+var globalHandle = auditHandle{
+  fileHandle: nil,
+  enabled: false,
+}
 
-func StartAuditTrail() error {
+func StartAuditTrail(auditLogPath string) error {
 	var err error
 	globalHandle.fileHandle, err = os.OpenFile(auditLogPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
+  globalHandle.enabled = true
 	if err != nil {
-    tlog.Fatal.Printf("Failed to open or create audit log file: %v", err)
-    return err
+    error_str := fmt.Sprint("Failed to open or create audit log file: %v", err)
+    tlog.Fatal.Printf(error_str)
+    // To ensure audit trail completeness, this should not be recoverable
+    panic(error_str)
 	}
   if err := WriteAuditEvent(EventStartAuditTrail, nil, nil); err != nil {
 		return err
@@ -147,12 +151,11 @@ This is the resulting event (unminified)
 `ctx` maps to "context", `payload` to "payload"
  */
 func WriteAuditEvent(etype AuditEvent, ctx *fuse.Context, payload map[string]string) error {
-	if globalHandle.fileHandle == nil {
-    // Either false call order (unlikely) or concurrent write-after-close (bad)
-    error_str := "WriteAuditEvent called on nil fileHandle"
-    tlog.Fatal.Println(error_str)
-    return errors.New(error_str)
-	}
+  if !globalHandle.enabled {
+    // probably not started with the parameter
+    return nil
+  }
+
   globalHandle.mu.Lock()
   defer globalHandle.mu.Unlock()
   str := formatEvent(etype, ctx, payload)
@@ -168,6 +171,10 @@ func EndAuditTrail() error {
   if err := WriteAuditEvent(EventEndAuditTrail, nil, nil); err != nil {
 		return err
 	}
+  if globalHandle.fileHandle == nil {
+    // probably never started (and we would have no work anyways)
+    return nil
+  }
 
   // we should await any currently still run events
   globalHandle.mu.Lock()
